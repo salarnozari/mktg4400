@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MKTG:4400 · Demo Fair Vote</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --paper:#ffffff;--tint:#f4f8f6;--green:#1b4332;--green2:#2d6a4f;
+  --ink:#1a1a1a;--ink2:#3f3f3f;--grey:#6e6e6e;--light:#dcdcdc;--red:#b3261e;
+  --serif:Georgia,"Times New Roman",serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Helvetica,Arial,sans-serif;
+}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column}
+[hidden]{display:none!important}
+.top{background:var(--green);color:#fff;padding:16px 20px;font:600 12px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase}
+.wrap{flex:1;width:100%;max-width:640px;margin:0 auto;padding:28px 20px 40px}
+.label{font:600 11px/1.3 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--green2)}
+h1{font:400 26px/1.25 var(--serif);color:var(--green);margin-top:10px}
+.rule{height:2px;background:var(--green);border:0;width:72px;margin:18px 0}
+.field{display:block;font:600 15px/1.3 var(--sans);margin-bottom:8px}
+select{width:100%;font:400 17px/1.3 var(--sans);color:var(--ink);padding:14px 12px;border:1px solid var(--light);
+  border-left:3px solid var(--green);background:var(--tint);border-radius:4px}
+.hint{font:400 15px/1.5 var(--sans);color:var(--ink2);margin:22px 0 6px}
+.picks label{display:flex;align-items:center;gap:14px;padding:14px 4px;border-bottom:1px solid #eee;font:400 17px/1.3 var(--sans)}
+.picks label.off{color:#b0b0b0}
+.picks input{width:22px;height:22px;accent-color:var(--green);flex:none}
+.tally{font:400 14px/1.5 var(--sans);color:var(--grey);margin-top:10px}
+button{margin-top:14px;width:100%;font:650 17px/1 var(--sans);color:#fff;background:var(--green);
+  border:0;border-radius:4px;padding:16px;cursor:pointer}
+button:disabled{background:var(--grey);cursor:default}
+.msg{font:400 15px/1.5 var(--sans);color:var(--red);margin-top:12px;min-height:1.5em}
+.done{border-left:3px solid var(--green);background:var(--tint);padding:18px 16px;font:400 17px/1.5 var(--sans);color:var(--ink)}
+.note{font:400 14px/1.5 var(--sans);color:var(--grey);margin-top:14px}
+.foot{padding:14px 20px;border-top:1px solid var(--light);font:500 11px/1 var(--sans);letter-spacing:.12em;color:var(--grey)}
+</style>
+</head>
+<body>
+<div class="top">MKTG:4400 · Digital Marketing · Demo Fair</div>
+<div class="wrap">
+  <p class="label" id="round">Demo Fair</p>
+  <h1 id="title">Connecting&hellip;</h1>
+  <hr class="rule">
+  <div id="wait" class="done" hidden></div>
+  <div id="form" hidden>
+    <label class="field" for="voter">Your name</label>
+    <select id="voter"></select>
+    <p class="hint" id="hint"></p>
+    <div class="picks" id="picks"></div>
+    <p class="tally" id="tally"></p>
+    <button id="send" disabled>Submit ballot</button>
+    <p class="msg" id="msg"></p>
+    <p class="note">Your ballot is encrypted. Only the instructor's screen can count it, and vote counts are never shown.</p>
+  </div>
+  <div id="sent" hidden>
+    <div class="done">Ballot received. You can change it from this phone until voting closes. Only your latest ballot counts.</div>
+    <button id="again">Change my ballot</button>
+  </div>
+</div>
+<div class="foot">UNIVERSITY OF IOWA · FALL 2026</div>
+<script>
+const SUPA_URL="https://xvelgscbfuqrqpgqqjea.supabase.co";
+const SUPA_KEY="sb_publishable_WcKAF-DLWPiCbCSiqyKLmA_W6trrLHV";
+const SEAL={"kty":"EC","crv":"P-256","x":"LMkhx8sE2yIQ4owdEu2UUBoy9my0Bpokpc3tyef5umc","y":"sGmbQq-VeDaQjo-jr-mypHiAd-yKZM-ZITs_4D_tLjg"};
+const $=id=>document.getElementById(id);
+const H={apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
+let q=null,qts=null,sig='',sent={},sending=false,device='',me='';
+try{device=localStorage.getItem('mktg4400-device')||'';me=localStorage.getItem('mktg4400-demo-name')||'';}catch(e){}
+if(!device){
+  const a=crypto.getRandomValues(new Uint8Array(8));
+  device=Array.from(a,x=>x.toString(16).padStart(2,'0')).join('');
+  try{localStorage.setItem('mktg4400-device',device);}catch(e){}
+}
+
+async function seal(msg){
+  const pub=await crypto.subtle.importKey('jwk',SEAL,{name:'ECDH',namedCurve:'P-256'},false,[]);
+  const eph=await crypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveKey']);
+  const key=await crypto.subtle.deriveKey({name:'ECDH',public:pub},eph.privateKey,{name:'AES-GCM',length:256},false,['encrypt']);
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,new TextEncoder().encode(msg)));
+  const raw=new Uint8Array(await crypto.subtle.exportKey('raw',eph.publicKey));
+  const all=new Uint8Array(raw.length+iv.length+ct.length);
+  all.set(raw,0);all.set(iv,raw.length);all.set(ct,raw.length+iv.length);
+  let s='';all.forEach(b=>{s+=String.fromCharCode(b);});
+  return 'DF1.'+btoa(s);
+}
+
+function el(tag,text){const n=document.createElement(tag);if(text!=null)n.textContent=text;return n;}
+const round=()=>q&&(q.r===1||q.r===2)?q.r:0;
+const names=()=>q&&Array.isArray(q.names)?q.names:[];
+const need=()=>round()===1?Math.min(4,names().length-1):1;
+const chosen=()=>[...$('picks').querySelectorAll('input:checked')].map(b=>+b.value);
+
+function show(which){['wait','form','sent'].forEach(id=>$(id).hidden=id!==which);}
+function wait(title,text){$('round').textContent='Demo Fair';$('title').textContent=title;$('wait').textContent=text;show('wait');}
+
+function render(){
+  const r=round();
+  if(!q)return wait('Voting opens soon','Keep this page open. Your ballot appears here when voting opens.');
+  if(!r)return wait('Voting is closed','Thanks for voting. Watch the screen at the front.');
+  $('round').textContent=r===1?'Round 1':'Final vote';
+  $('title').textContent=r===1?'Pick your top 4':'Pick the winner';
+  if(sent[qts])return show('sent');
+  const keep=chosen(),sel=$('voter'),list=names();
+  const was=sel.value!==''?list[+sel.value]:me;
+  sel.innerHTML='';
+  sel.appendChild(el('option','Choose your name')).value='';
+  list.map((n,i)=>[n,i]).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([n,i])=>{sel.appendChild(el('option',n)).value=String(i);});
+  const idx=list.indexOf(was);
+  sel.value=idx>=0?String(idx):'';
+  $('hint').textContent=r===1
+    ?'Pick the '+need()+' projects you liked best. You cannot pick yourself.'
+    :'Pick the one finalist you think should win. You cannot pick yourself.';
+  drawPicks(keep);
+  show('form');
+}
+
+function drawPicks(keep){
+  const r=round(),list=names(),self=$('voter').value===''?-1:+$('voter').value,box=$('picks');
+  box.innerHTML='';
+  const pool=(r===1?list.map((n,i)=>i):(q.fin||[])).filter(i=>i!==self&&i>=0&&i<list.length)
+    .sort((a,b)=>list[a].localeCompare(list[b]));
+  pool.forEach(i=>{
+    const lab=el('label'),inp=el('input');
+    inp.type=r===1?'checkbox':'radio';inp.name='pick';inp.value=String(i);inp.checked=keep.includes(i);
+    inp.addEventListener('change',limit);
+    lab.appendChild(inp);lab.appendChild(document.createTextNode(list[i]));box.appendChild(lab);
+  });
+  limit();
+}
+
+function limit(){
+  const r=round(),k=need(),boxes=[...$('picks').querySelectorAll('input')],on=boxes.filter(b=>b.checked).length;
+  if(r===1){
+    boxes.forEach(b=>{b.disabled=!b.checked&&on>=k;b.parentNode.classList.toggle('off',b.disabled);});
+    $('tally').textContent=on+' of '+k+' chosen';
+  }else $('tally').textContent=on?'1 finalist chosen':'Choose 1 finalist';
+  $('send').disabled=sending||$('voter').value===''||on!==k||k<1;
+}
+
+$('voter').addEventListener('change',()=>{
+  const v=$('voter').value;me=v===''?'':names()[+v];
+  try{localStorage.setItem('mktg4400-demo-name',me);}catch(e){}
+  drawPicks(chosen());
+});
+
+$('send').addEventListener('click',async()=>{
+  const r=round();if(!r)return;
+  sending=true;$('send').textContent='Sending…';$('msg').textContent='';limit();
+  try{
+    const text=await seal(r+'|'+$('voter').value+'|'+chosen().join(',')+'|'+device);
+    const res=await fetch(SUPA_URL+'/rest/v1/live_answers',{method:'POST',headers:Object.assign({Prefer:'return=minimal'},H),
+      body:JSON.stringify({qts:qts,text:text,ts:Date.now()})});
+    if(!res.ok)throw 0;
+    sent[qts]=true;render();
+  }catch(e){$('msg').textContent='Could not send. Check your connection and try again.';}
+  sending=false;$('send').textContent='Submit ballot';limit();
+});
+
+$('again').addEventListener('click',()=>{sent[qts]=false;render();});
+
+async function poll(){
+  try{
+    const r=await fetch(SUPA_URL+'/rest/v1/live_question?id=eq.1&select=ts,choices',{headers:H,cache:'no-store'});
+    const row=(await r.json())[0];
+    let d=null;
+    try{d=JSON.parse(row.choices);}catch(e){d=null;}
+    q=d&&d.demo===1?d:null;
+    qts=row?row.ts:null;
+    const s=JSON.stringify([qts,q]);
+    if(s!==sig){sig=s;render();}
+  }catch(e){}
+}
+poll();setInterval(poll,3000);
+</script>
+</body>
+</html>
