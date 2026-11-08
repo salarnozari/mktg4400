@@ -6,6 +6,7 @@
 <title>MKTG:4400 · Live Question</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+[hidden]{display:none!important}
 :root{
   --paper:#ffffff;--tint:#f4f8f6;--green:#1b4332;--green2:#2d6a4f;
   --ink:#1a1a1a;--ink2:#3f3f3f;--grey:#6e6e6e;--light:#dcdcdc;
@@ -30,6 +31,9 @@ button:disabled{background:var(--grey);cursor:default}
 .note{font:400 14px/1.5 var(--sans);color:var(--grey);margin-top:14px}
 .done{border-left:3px solid var(--green);background:var(--tint);padding:18px 16px;
   font:400 17px/1.5 var(--sans);color:var(--ink);margin-top:18px;display:none}
+.consent{border:1px solid var(--light);border-top:3px solid var(--green);background:var(--tint);padding:20px 18px;border-radius:4px}
+.consent h2{font:400 22px/1.25 var(--serif);color:var(--green);margin:8px 0 12px}
+.consent p.c{font:400 16px/1.5 var(--sans);color:var(--ink);margin-top:10px}
 .foot{padding:14px 20px;border-top:1px solid var(--light);
   font:500 11px/1 var(--sans);letter-spacing:.12em;color:var(--grey)}
 </style>
@@ -40,6 +44,16 @@ button:disabled{background:var(--grey);cursor:default}
   <p class="label">The question</p>
   <div id="q">Waiting for a question&hellip;</div>
   <hr class="rule">
+  <div id="consent" class="consent" hidden>
+    <p class="label">Before you answer</p>
+    <h2>Consent</h2>
+    <p class="c">Taking part is voluntary.</p>
+    <p class="c">This page does not ask for your name or log you in, so your answer is anonymous.</p>
+    <p class="c">Your answer will appear on the screen at the front of the room and is saved in the class poll database.</p>
+    <p class="c">Please do not write your name or anything personal about yourself or anyone else.</p>
+    <button id="agree">I agree, continue</button>
+    <p class="note">If you would rather not take part, just close this page.</p>
+  </div>
   <div id="form">
     <div id="mc" style="display:none"></div>
     <textarea id="a" maxlength="300" placeholder="Your answer"></textarea>
@@ -50,17 +64,12 @@ button:disabled{background:var(--grey);cursor:default}
 </div>
 <div class="foot">UNIVERSITY OF IOWA · FALL 2026</div>
 <script>
-/* ================= CONFIG =================
-   SUPA_URL and SUPA_KEY: same Supabase project URL and public
-   API key as in the deck slide, no trailing slash on the URL.
-   See docs/live-poll-setup.md.  */
 const SUPA_URL="https://xvelgscbfuqrqpgqqjea.supabase.co";
 const SUPA_KEY="sb_publishable_WcKAF-DLWPiCbCSiqyKLmA_W6trrLHV";
-/* ========================================== */
 const $=id=>document.getElementById(id);
 const H={apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
 const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML};
-let qts=null, answered=null, choices=[], sending=false;
+let qts=null, answered=null, choices=[], sending=false, agreed=null;
 try{answered=localStorage.getItem('mktg4400-answered')}catch(e){}
 function renderQ(){
   const mc=choices.length>0;
@@ -76,9 +85,12 @@ function setState(){
   const done=open&&String(qts)===answered;
   $('send').disabled=!open||done||sending;
   $('mc').querySelectorAll('button').forEach(b=>b.disabled=!open||done||sending);
+  const ask=open&&!done&&agreed!==String(qts);
+  $('consent').hidden=!ask;
   $('done').style.display=done?'block':'none';
-  $('form').style.display=done?'none':'block';
+  $('form').style.display=done||ask?'none':'block';
 }
+$('agree').addEventListener('click',()=>{agreed=String(qts);setState();});
 async function poll(){
   if(!SUPA_URL||!SUPA_KEY){$('q').textContent='Not configured yet. Set SUPA_URL and SUPA_KEY in poll.html.';return;}
   try{
