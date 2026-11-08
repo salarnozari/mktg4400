@@ -79,6 +79,8 @@ const SEAL={"kty":"EC","crv":"P-256","x":"LMkhx8sE2yIQ4owdEu2UUBoy9my0Bpokpc3tye
 const $=id=>document.getElementById(id);
 const H={apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json'};
 let q=null,qts=null,sig='',sent={},sending=false,device='',me='',agreed=null;
+const rank={};
+const shuffleKey=i=>{if(rank[i]===undefined)rank[i]=Math.random();return rank[i];};
 try{device=localStorage.getItem('mktg4400-device')||'';me=localStorage.getItem('mktg4400-demo-name')||'';}catch(e){}
 if(!device){
   const a=crypto.getRandomValues(new Uint8Array(8));
@@ -134,7 +136,7 @@ function drawPicks(keep){
   const r=round(),list=names(),self=$('voter').value===''?-1:+$('voter').value,box=$('picks');
   box.innerHTML='';
   const pool=(r===1?list.map((n,i)=>i):(q.fin||[])).filter(i=>i!==self&&i>=0&&i<list.length)
-    .sort((a,b)=>list[a].localeCompare(list[b]));
+    .sort((a,b)=>shuffleKey(a)-shuffleKey(b));
   pool.forEach(i=>{
     const lab=el('label'),inp=el('input');
     inp.type=r===1?'checkbox':'radio';inp.name='pick';inp.value=String(i);inp.checked=keep.includes(i);
